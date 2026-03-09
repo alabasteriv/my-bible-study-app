@@ -1,93 +1,93 @@
 import streamlit as st
 import requests
-import random
 
-# --- 1. APP CONFIGURATION ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(
-    page_title="Bible Topic Study",
+    page_title="TCRRA Bible Study Hub",
     page_icon="📖",
-    layout="centered"
+    layout="wide"
 )
 
-# --- 2. CUSTOM STYLING (Optional but nice) ---
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 20px; }
-    .verse-box { 
-        padding: 20px; 
-        border-radius: 10px; 
-        background-color: white; 
-        border-left: 5px solid #4A90E2;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- 2. API FUNCTIONS (Using Bolls Bible API - No Key Needed) ---
 
-# --- 3. VERSE OF THE DAY LOGIC ---
-# A curated list of daily inspirations for your community
-daily_options = [
-    {"ref": "Isaiah 40:31", "text": "But they that wait upon the Lord shall renew their strength..."},
-    {"ref": "Philippians 4:13", "text": "I can do all things through Christ which strengtheneth me."},
-    {"ref": "Psalm 23:1", "text": "The Lord is my shepherd; I shall not want."},
-    {"ref": "John 14:27", "text": "Peace I leave with you, my peace I give unto you..."},
-    {"ref": "Proverbs 3:5", "text": "Trust in the Lord with all thine heart; and lean not unto thine own understanding."}
-]
-
-# --- 4. API CONNECTION FUNCTION ---
-def fetch_scripture(query):
-    """Links to the web-based Bible database API"""
-    url = f"https://bible-api.com/{query}"
+def get_daily_verse():
+    """Fetches a random verse for the 'Daily' section"""
     try:
-        response = requests.get(url)
+        # Bolls has a random verse endpoint
+        url = "https://bolls.life/get-random-verse/KJV/"
+        response = requests.get(url, timeout=5).json()
+        return {
+            "text": response['text'],
+            "ref": f"{response['book']} {response['chapter']}:{response['verse']}"
+        }
+    except:
+        return {"text": "For I know the plans I have for you, declares the Lord.", "ref": "Jeremiah 29:11"}
+
+def search_bible(query, translation):
+    """Searches for verses by topic or keyword"""
+    # Bolls search endpoint: /v2/find/<translation>/?search=<query>
+    url = f"https://bolls.life/v2/find/{translation}/"
+    params = {"search": query, "limit": 10} # We limit to 10 for speed
+    try:
+        response = requests.get(url, params=params, timeout=10)
         if response.status_code == 200:
-            return response.json()
+            return response.json().get('results', [])
         return None
     except:
-        return "Connection Error"
+        return None
 
-# --- 5. APP UI LAYOUT ---
-st.title("📖 Bible Study Helper")
-st.write("Find strength and wisdom in the Word.")
+# --- 3. USER INTERFACE ---
 
-# Display Verse of the Day
-st.subheader("🌟 Verse of the Day")
-votd = random.choice(daily_options)
+st.title("📖 Bible Study Hub")
+st.write("A free tool for search and study—no account or keys required.")
+
+# Verse of the Day Section
+votd = get_daily_verse()
 st.markdown(f"""
-<div class="verse-box">
-    <i>"{votd['text']}"</i><br>
-    <strong>— {votd['ref']}</strong>
-</div>
+    <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border-left: 8px solid #4CAF50;">
+        <h4 style="margin-top:0; color:#4CAF50;">✨ Random Inspiration</h4>
+        <p style="font-size: 1.1em; font-style: italic;">"{votd['text']}"</p>
+        <strong>— {votd['ref']}</strong>
+    </div>
 """, unsafe_allow_html=True)
 
 st.divider()
 
-# Search Section
-st.subheader("🔍 Search by Topic or Reference")
-search_query = st.text_input("Example: 'Peace', 'Hope', or 'John 3:16'", placeholder="Type here...")
+# Search Sidebar
+with st.sidebar:
+    st.header("Search Settings")
+    # Mapping common names to Bolls API codes
+    translation_options = {
+        "King James Version": "KJV",
+        "New King James": "NKJV",
+        "English Standard Version": "ESV",
+        "Yoruba Bible": "YOR"
+    }
+    selected_ver = st.selectbox("Translation", list(translation_options.keys()))
+    ver_code = translation_options[selected_ver]
+    
+    st.caption("Searching in: " + selected_ver)
 
-if search_query:
-    with st.spinner('Searching the scriptures...'):
-        data = fetch_scripture(search_query)
+# Main Search Area
+st.subheader("🔍 Search by Topic")
+user_input = st.text_input("Enter a keyword (e.g., 'Love', 'Strength', 'Patience')", placeholder="Type here...")
+
+if user_input:
+    with st.spinner(f"Searching the Word in {selected_ver}..."):
+        results = search_bible(user_input, ver_code)
         
-        if data and isinstance(data, dict):
-            st.success(f"Results for: {data.get('reference')}")
-            
-            # Display result in a clean format
-            st.markdown(f"### {data.get('reference')}")
-            st.write(data.get('text'))
-            
-            # Action buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📋 Copy Verse"):
-                    st.write("Text ready to copy!") 
-            with col2:
-                st.info("💡 Use this text for your sermon slides.")
-                
+        if results:
+            st.success(f"Found {len(results)} verses for '{user_input}'")
+            for item in results:
+                # Bolls results include the verse text and reference parts
+                ref = f"{item['book']} {item['chapter']}:{item['verse']}"
+                with st.expander(f"📜 {ref}"):
+                    st.write(item['text'])
+                    if st.button(f"Copy {ref}", key=item['pk']):
+                        st.info("Verse text ready to highlight and copy!")
         else:
-            st.error("We couldn't find that specific topic. Try a direct verse like 'Psalm 23' or a common word like 'Faith'.")
+            st.warning("No verses found for that topic. Try a simpler keyword.")
 
 # Footer
 st.markdown("---")
-st.caption("Built for Gospel Ministry and Bible Study. Powered by Bible-API.")
+st.caption("Data provided by the Open Source Bolls Bible API.")
