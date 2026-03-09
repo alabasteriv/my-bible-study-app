@@ -1,62 +1,64 @@
 import streamlit as st
 import requests
+import re
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(
-    page_title="TCRRA Bible Study Hub",
-    page_icon="📖",
-    layout="wide"
-)
+st.set_page_config(page_title="TCRRA Bible Study Hub", page_icon="📖", layout="wide")
 
-# --- 2. API FUNCTIONS (Using Bolls Bible API - No Key Needed) ---
+# --- 2. CLEANING UTILITY ---
+def clean_html(raw_html):
+    """Removes <u> tags and other HTML from the Bible text"""
+    if not raw_html:
+        return ""
+    # This removes everything inside < > brackets (like <u> or </u>)
+    clean_text = re.sub('<.*?>', '', raw_html)
+    return clean_text
+
+# --- 3. UPDATED API FUNCTIONS ---
 
 def get_daily_verse():
-    """Fetches a random verse for the 'Daily' section"""
+    """Fetches a random verse and cleans the HTML"""
     try:
-        # Bolls has a random verse endpoint
         url = "https://bolls.life/get-random-verse/KJV/"
         response = requests.get(url, timeout=5).json()
         return {
-            "text": response['text'],
+            "text": clean_html(response['text']),
             "ref": f"{response['book']} {response['chapter']}:{response['verse']}"
         }
     except:
-        return {"text": "For I know the plans I have for you, declares the Lord.", "ref": "Jeremiah 29:11"}
+        return {"text": "Trust in the Lord with all thine heart.", "ref": "Proverbs 3:5"}
 
 def search_bible(query, translation):
-    """Searches for verses by topic or keyword"""
-    # Bolls search endpoint: /v2/find/<translation>/?search=<query>
-    url = f"https://bolls.life/v2/find/{translation}/"
-    params = {"search": query, "limit": 10} # We limit to 10 for speed
+    """Searches the database using the updated Bolls v2 URL"""
+    # The URL requires a space before the 'search' parameter in some versions of the API
+    url = f"https://bolls.life/v2/find/{translation}/?search={query}"
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            return response.json().get('results', [])
-        return None
-    except:
+            data = response.json()
+            return data.get('results', [])
+        return []
+    except Exception as e:
         return None
 
-# --- 3. USER INTERFACE ---
+# --- 4. USER INTERFACE ---
 
 st.title("📖 Bible Study Hub")
-st.write("A free tool for search and study—no account or keys required.")
 
-# Verse of the Day Section
+# Verse of the Day
 votd = get_daily_verse()
 st.markdown(f"""
     <div style="background-color: #f9f9f9; padding: 20px; border-radius: 10px; border-left: 8px solid #4CAF50;">
-        <h4 style="margin-top:0; color:#4CAF50;">✨ Random Inspiration</h4>
-        <p style="font-size: 1.1em; font-style: italic;">"{votd['text']}"</p>
+        <p style="font-size: 1.2em; font-style: italic;">"{votd['text']}"</p>
         <strong>— {votd['ref']}</strong>
     </div>
 """, unsafe_allow_html=True)
 
 st.divider()
 
-# Search Sidebar
+# Sidebar
 with st.sidebar:
     st.header("Search Settings")
-    # Mapping common names to Bolls API codes
     translation_options = {
         "King James Version": "KJV",
         "New King James": "NKJV",
@@ -65,29 +67,25 @@ with st.sidebar:
     }
     selected_ver = st.selectbox("Translation", list(translation_options.keys()))
     ver_code = translation_options[selected_ver]
-    
-    st.caption("Searching in: " + selected_ver)
 
 # Main Search Area
 st.subheader("🔍 Search by Topic")
-user_input = st.text_input("Enter a keyword (e.g., 'Love', 'Strength', 'Patience')", placeholder="Type here...")
+user_input = st.text_input("Enter a keyword (e.g., 'Healing', 'Peace')", placeholder="Search...")
 
 if user_input:
-    with st.spinner(f"Searching the Word in {selected_ver}..."):
+    with st.spinner(f"Searching in {selected_ver}..."):
         results = search_bible(user_input, ver_code)
         
         if results:
-            st.success(f"Found {len(results)} verses for '{user_input}'")
+            st.success(f"Found {len(results)} matches.")
             for item in results:
-                # Bolls results include the verse text and reference parts
                 ref = f"{item['book']} {item['chapter']}:{item['verse']}"
                 with st.expander(f"📜 {ref}"):
-                    st.write(item['text'])
-                    if st.button(f"Copy {ref}", key=item['pk']):
-                        st.info("Verse text ready to highlight and copy!")
+                    # We clean the text here too
+                    st.write(clean_html(item['text']))
+        elif results == []:
+            st.warning("No verses found for that word. Try 'Faith' or 'Love'.")
         else:
-            st.warning("No verses found for that topic. Try a simpler keyword.")
+            st.error("There was a connection issue with the database. Please try again in a moment.")
 
-# Footer
-st.markdown("---")
-st.caption("Data provided by the Open Source Bolls Bible API.")
+st.caption("Data provided by Bolls Bible API.")
